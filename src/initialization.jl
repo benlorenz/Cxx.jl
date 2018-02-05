@@ -245,7 +245,10 @@ function ScanLibDirForGCCTriple(base,triple)
         # Don't try to find ubuntu weirdness
         # hopefully recent enough versions don't
         # have this mismatch
-        ("/i386-linux-gnu/gcc/" * triple, "/../../../..")
+        ("/i386-linux-gnu/gcc/" * triple, "/../../../.."),
+        # the /include here is on purpose since include is directly
+        # under the version-number dir on gentoo
+        ("/gcc/" * triple,"/include")
     ]
     Version = v"0.0.0"
     VersionString = ""
@@ -271,6 +274,7 @@ function ScanLibDirForGCCTriple(base,triple)
                   !isdir( IncPath * "/c++/" * dir ) )  &&
                ( !isdir( IncPath * "/c++/" * dir * "/" * triple ) ||
                   !isdir( IncPath * "/c++/" * dir ) )  &&
+               ( !isdir( IncPath * "/g++-v$(CandidateVersion.major)/" ) )  &&
                (triple != "i686-linux-gnu" || !isdir( IncPath * "/i386-linux-gnu/c++/" * dir ))
                 continue
             end
@@ -334,8 +338,14 @@ function CollectLinuxHeaderPaths!(headers)
     incpath = Path * "/../include"
 
     push!(headers, (incpath, C_System))
-    push!(headers, (incpath * "/c++/" * VersionString, C_System))
-    push!(headers, (incpath * "/c++/" * VersionString * "/backward", C_System))
+    if isdir(incpath * "/c++/" * VersionString)
+        push!(headers, (incpath * "/c++/" * VersionString, C_System))
+        push!(headers, (incpath * "/c++/" * VersionString * "/backward", C_System))
+    end
+    if isdir(incpath * "/g++-v$(Version.major)/")
+        push!(headers, (incpath * "/g++-v$(Version.major)/", C_System))
+        push!(headers, (incpath * "/g++-v$(Version.major)/" * Triple, C_System))
+    end
 
     # check which type of include dir we have
     if Triple == "i686-linux-gnu" && !isdir(incpath * "/" * Triple)
@@ -344,7 +354,7 @@ function CollectLinuxHeaderPaths!(headers)
     if isdir(incpath * "/" * Triple)
        push!(headers, (incpath * "/" * Triple * "/c++/" * VersionString, C_System))
        push!(headers, (incpath * "/" * Triple, C_System))
-    else
+    elseif isdir(incpath * "/c++/" * VersionString * "/" * Triple)
        push!(headers, (incpath * "/c++/" * VersionString * "/" * Triple, C_System))
     end
 end
@@ -372,6 +382,11 @@ function collectClangHeaders!(headers)
         "../lib/clang/$ver/include/")
     cxxclangdir = joinpath(dirname(@__FILE__),
         "../deps/build/clang-$(Base.libllvm_version)/lib/clang/$ver/include")
+    basellvmdir = joinpath(BASE_JULIA_BIN,
+        "../lib/llvm/$(ver.major)/include/")
+    if isdir(basellvmdir)
+        push!(headers, (basellvmdir, C_ExternCSystem))
+    end
     if isdir(baseclangdir)
         push!(headers, (baseclangdir, C_ExternCSystem))
     else

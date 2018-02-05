@@ -50,14 +50,20 @@ module CxxREPL
     ver_str = Base.libllvm_version
     cxxclangdir = joinpath(dirname(@__FILE__),"../../deps/src/clang-$ver_str/include")
     cxxllvmdir = joinpath(dirname(@__FILE__),"../../deps/src/llvm-$ver_str/include")
+    cxxclangbuilddir = joinpath(dirname(@__FILE__),"../../deps/build/clang-$ver_str/include")
+    cxxllvmbuilddir = joinpath(dirname(@__FILE__),"../../deps/build/llvm-$ver_str/include")
 
     if isdir(cxxclangdir)
         addHeaderDir(cxxclangdir)
-        addHeaderDir(joinpath(dirname(@__FILE__),"../../deps/build/clang-$ver_str/include"))
+    end
+    if isdir(cxxclangbuilddir)
+        addHeaderDir(cxxclangbuilddir)
     end
     if isdir(cxxllvmdir)
         addHeaderDir(cxxllvmdir)
-        addHeaderDir(joinpath(dirname(@__FILE__),"../../deps/build/llvm-$ver_str/include"))
+    end
+    if isdir(cxxllvmbuilddir)
+        addHeaderDir(cxxllvmbuilddir)
     end
     addHeaderDir(joinpath(BASE_JULIA_BIN,"../include"))
 
