@@ -2,13 +2,19 @@ JULIA_SRC := $(subst \,/,$(BASE_JULIA_SRC))
 JULIA_BIN := $(subst \,/,$(BASE_JULIA_BIN))
 
 ifeq ($(LLVM_VER),)
+ifeq (exists, $(shell [ -e $(JULIA_SRC)/deps/Versions.make ] && echo exists ))
 BUILDROOT=$(JULIA_BIN)/../..
 include $(JULIA_SRC)/deps/Versions.make
 ifeq (exists, $(shell [ -e $(BUILDROOT)/Make.user ] && echo exists ))
 include $(BUILDROOT)/Make.user
 endif
 endif
+endif
 include Make.inc
+
+ifeq ($(USE_SYSTEM_LLVM),1)
+LLVM_VER=$(shell $(LLVM_CONFIG) --version)
+endif
 
 LLVM_VER_MAJ:=$(word 1, $(subst ., ,$(LLVM_VER)))
 LLVM_VER_MIN:=$(word 2, $(subst ., ,$(LLVM_VER)))
@@ -39,10 +45,17 @@ endif
 
 CXXJL_CPPFLAGS = -I$(JULIA_SRC)/src/support -I$(BASE_JULIA_BIN)/../include
 
+ifneq ($(USE_SYSTEM_LLVM),1)
+
 ifeq ($(JULIA_BINARY_BUILD),1)
 LIBDIR := $(BASE_JULIA_BIN)/../lib/julia
 else
 LIBDIR := $(BASE_JULIA_BIN)/../lib
+endif
+
+else
+LLVM_LIBDIR = $(shell $(LLVM_CONFIG) --libdir)
+LIBDIR += $(LLVM_LIBDIR)
 endif
 
 CLANG_LIBS = clangFrontendTool clangBasic clangLex clangDriver clangFrontend clangParse \
@@ -88,9 +101,14 @@ build/llvm-$(LLVM_VER)/bin/llvm-config: build/llvm-$(LLVM_VER)/Makefile
 	cd build/llvm-$(LLVM_VER) && $(MAKE)
 LLVM_HEADER_DIRS = src/llvm-$(LLVM_VER)/include build/llvm-$(LLVM_VER)/include
 CLANG_CMAKE_DEP = build/llvm-$(LLVM_VER)/bin/llvm-config
-LLVM_CONFIG = ../llvm-$(LLVM_VER)/bin/llvm-config
+LLVM_CONFIG ?= ../llvm-$(LLVM_VER)/bin/llvm-config
 else
 CLANG_CMAKE_OPTS += -DLLVM_TABLEGEN_EXE=$(BASE_JULIA_BIN)/../tools/llvm-tblgen
+endif
+
+ifeq ($(USE_SYSTEM_LLVM),1)
+LLVM_HEADER_DIRS += src/llvm-$(LLVM_VER)/include $(shell $(LLVM_CONFIG) --includedir)
+CLANG_CMAKE_DEP = $(LLVM_CONFIG)
 endif
 
 JULIA_LDFLAGS = -L$(BASE_JULIA_BIN)/../lib -L$(BASE_JULIA_BIN)/../lib/julia
@@ -112,8 +130,15 @@ build/clang-$(LLVM_VER)/Makefile: src/clang-$(LLVM_VER) $(CLANG_CMAKE_DEP)
 			-DLLVM_CONFIG=$(LLVM_CONFIG) $(CLANG_CMAKE_OPTS) ../../src/clang-$(LLVM_VER)
 build/clang-$(LLVM_VER)/lib/libclangCodeGen.a: build/clang-$(LLVM_VER)/Makefile
 	cd build/clang-$(LLVM_VER) && $(MAKE)
+ifeq ($(USE_SYSTEM_LLVM),1)
+JULIA_LDFLAGS += -L$(LLVM_LIBDIR)
+JULIA_LDFLAGS += -lclangCodeGen
+LIB_DEPENDENCY += src/clang-$(LLVM_VER)
+else
 LIB_DEPENDENCY += build/clang-$(LLVM_VER)/lib/libclangCodeGen.a
 JULIA_LDFLAGS += -Lbuild/clang-$(LLVM_VER)/lib
+endif
+
 CXXJL_CPPFLAGS += -Isrc/clang-$(LLVM_VER)/lib -Ibuild/clang-$(LLVM_VER)/include \
 	-Isrc/clang-$(LLVM_VER)/include
 else # BUILD_LLVM_CLANG
@@ -123,9 +148,12 @@ CXXJL_CPPFLAGS += -I$(JULIA_SRC)/deps/srccache/llvm-$(LLVM_VER)/tools/clang/lib 
 endif
 else
 LLVM_SRC_DIR := src/llvm-$(LLVM_VER)
+
+ifneq ($(USE_SYSTEM_LLVM),1)
 CLANG_CMAKE_DEP = build/llvm-$(LLVM_VER)/bin/llvm-config
 LLVM_CONFIG = ../llvm-$(LLVM_VER)/bin/llvm-config
 JULIA_LDFLAGS += -Lbuild/clang-$(LLVM_VER)/lib
+endif
 LLVM_HEADER_DIRS = src/llvm-$(LLVM_VER)/include build/llvm-$(LLVM_VER)/include
 CXXJL_CPPFLAGS += -Isrc/clang-$(LLVM_VER)/lib -Ibuild/clang-$(LLVM_VER)/include \
         -Isrc/clang-$(LLVM_VER)/include
@@ -156,9 +184,12 @@ LLVM_LIB_NAME := LLVM
 else
 LLVM_LIB_NAME := LLVM-$(CXX_LLVM_VER)
 endif
+
+ifneq ($(USE_SYSTEM_LLVM),1)
 LDFLAGS += -l$(LLVM_LIB_NAME)
 
 LIB_DEPENDENCY += $(LIBDIR)/lib$(LLVM_LIB_NAME).$(SHLIB_EXT)
+endif
 
 usr/lib:
 	@mkdir -p $(CURDIR)/usr/lib/
