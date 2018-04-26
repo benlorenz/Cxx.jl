@@ -15,10 +15,10 @@ end
 #that contains the headers etc, use that
 BASE_JULIA_BIN = get(ENV, "BASE_JULIA_BIN", JULIA_HOME)
 if (BASE_JULIA_BIN == "/usr/bin")
-   # system-wide installation
-   BASE_JULIA_SRC = get(ENV, "BASE_JULIA_SRC", "/usr/share/julia")
+    # system-wide installation
+    BASE_JULIA_SRC = get(ENV, "BASE_JULIA_SRC", "/usr/share/julia")
 else
-   BASE_JULIA_SRC = get(ENV, "BASE_JULIA_SRC", joinpath(BASE_JULIA_BIN, "..", ".."))
+    BASE_JULIA_SRC = get(ENV, "BASE_JULIA_SRC", joinpath(BASE_JULIA_BIN, "..", ".."))
 end
 
 #write a simple include file with that path
@@ -36,14 +36,25 @@ close(f)
 
 println("Tuning for julia installation at $BASE_JULIA_BIN with sources possibly at $BASE_JULIA_SRC")
 
-if (BASE_JULIA_BIN != "/usr/bin")
-    # Try to autodetect C++ ABI in use
-    llvm_path = (Compat.Sys.isapple() && VersionNumber(Base.libllvm_version) >= v"3.8") ? "libLLVM" : "libLLVM-$(Base.libllvm_version)"
+# Try to autodetect llvm directory and C++ ABI in use
+llvm_path = (Compat.Sys.isapple() && VersionNumber(Base.libllvm_version) >= v"3.8") ? "libLLVM" : "libLLVM-$(Base.libllvm_version)"
 
+try
+    # needs LLVM_BUILD_LLVM_DYLIB
     llvm_lib_path = Libdl.dlpath(llvm_path)
-    old_cxx_abi = searchindex(open(read, llvm_lib_path),Vector{UInt8}("_ZN4llvm3sys16getProcessTripleEv"),0) != 0
-    old_cxx_abi && (ENV["OLD_CXX_ABI"] = "1")
+catch
+    # it seems there is no libLLVM, llvm might have been built with BUILD_SHARED_LIBS instead
+    # this is the case for the gentoo sys-devel/llvm ebuild
+    # lets try libLLVMSupport instead
+    llvm_path = "libLLVMSupport.so"
+    llvm_lib_path = Libdl.dlpath(llvm_path)
+end
 
+old_cxx_abi = searchindex(open(read, llvm_lib_path),Vector{UInt8}("_ZN4llvm3sys16getProcessTripleEv"),0) != 0
+old_cxx_abi && (ENV["OLD_CXX_ABI"] = "1")
+
+# FIXME: better detection whether USE_SYSTEM_LLVM was used
+if BASE_JULIA_BIN != "/usr/bin" && BASE_JULIA_BIN != "/usr/local/bin"
     llvm_config_path = joinpath(BASE_JULIA_BIN,"..","tools","llvm-config")
     if isfile(llvm_config_path)
         info("Building julia source build")
@@ -56,13 +67,16 @@ if (BASE_JULIA_BIN != "/usr/bin")
         ENV["PATH"] = string(JULIA_HOME,":",ENV["PATH"])
     end
 else
-    info("Building for system-wide installation (on gentoo)")
-    # libLLVM.so is not enabled by default, so we might check for the symbol in libLLVMSupport
-    # if we want to autodetect the C++ ABI
+    info("Building with system LLVM installation")
     ENV["LLVM_VER"] = Base.libllvm_version
-    major_ver = Base.VersionNumber(Base.libllvm_version).major
-    # TODO: the following probably only works on gentoo
-    llvm_config_path = "/usr/lib64/llvm/$major_ver/bin/llvm-config"
+    if haskey(ENV, "LLVM_PATH")
+        llvm_config_pathjoinpath(ENV["LLVM_PATH"],"bin","llvm-config)
+    else
+        llvm_config_path = joinpath(Base.Filesystem.dirname(llvm_lib_path),"..","bin","llvm-config")
+    end
+    if !isfile(llvm_config_path)
+        error("could not detect llvm directory, please specify ENV['LLVM_HOME'] manually")
+    end
     ENV["USE_SYSTEM_LLVM"] = "1"
     ENV["LLVM_CONFIG"] = llvm_config_path
 end
